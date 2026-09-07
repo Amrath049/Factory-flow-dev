@@ -1,0 +1,114 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum OrderStatus {
+  PENDING
+  IN_PRODUCTION
+  DELIVERED
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model Customer {
+  id        String    @id @default(uuid())
+  name      String
+  phone     String
+  email     String?
+  addresses Address[]
+  orders    Order[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Address {
+  id          String   @id @default(uuid())
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customerId  String
+  addressLine String
+  city        String
+  state       String
+  pincode     String
+  orders      Order[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Product {
+  id               String            @id @default(uuid())
+  name             String
+  orderItems       OrderItem[]
+  inventory        Inventory?
+  productionEntries ProductionEntry[]
+  stockHistory     StockHistory[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+}
+
+model Order {
+  id          String      @id @default(uuid())
+  orderNumber Int         @unique @default(autoincrement())
+  customer    Customer    @relation(fields: [customerId], references: [id])
+  customerId  String
+  address     Address     @relation(fields: [addressId], references: [id])
+  addressId   String
+  status      OrderStatus @default(PENDING)
+  deliveryDate DateTime
+  notes       String?
+  items       OrderItem[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model OrderItem {
+  id        String   @id @default(uuid())
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId   String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+  quantity  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Inventory {
+  id                 String   @id @default(uuid())
+  product            Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId          String   @unique
+  availableStock     Int      @default(0)
+  dailyProductionRate Int     @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model ProductionEntry {
+  id        String   @id @default(uuid())
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+  quantity  Int
+  date      DateTime @db.Date
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model StockHistory {
+  id            String   @id @default(uuid())
+  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId     String
+  previousStock Int
+  change        Int
+  newStock      Int
+  reason        String?
+  date          DateTime @db.Date
+  createdAt     DateTime @default(now())
+}
