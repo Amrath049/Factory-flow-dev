@@ -20,7 +20,7 @@ export class DashboardService {
       productionToday,
     ] = await Promise.all([
       this.prisma.customer.count({ where: { businessId, deletedAt: null } }),
-      this.prisma.product.count({ where: { businessId } }),
+      this.prisma.product.count({ where: { businessId, deletedAt: null } }),
       this.prisma.order.count({ where: { businessId } }),
       this.prisma.order.count({ where: { businessId, status: 'PENDING' } }),
       this.prisma.order.findMany({
@@ -30,7 +30,7 @@ export class DashboardService {
         include: { customer: { select: { name: true } } },
       }),
       this.prisma.product.findMany({
-        where: { businessId },
+        where: { businessId, deletedAt: null },
         take: 5,
         include: {
           inventory: true,

@@ -32,6 +32,7 @@ export class ProductsService {
 
     const where: any = {
       businessId,
+      deletedAt: null,
       ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
     };
 
@@ -101,7 +102,7 @@ export class ProductsService {
 
   async update(id: string, dto: UpdateProductDto, user: UserPayload) {
     const product = await this.prisma.product.findFirst({
-      where: { id, businessId: user.businessId! },
+      where: { id, businessId: user.businessId!, deletedAt: null },
     });
     if (!product) throw new NotFoundException('Product not found');
 
@@ -148,12 +149,13 @@ export class ProductsService {
 
   async delete(id: string, user: UserPayload) {
     const product = await this.prisma.product.findFirst({
-      where: { id, businessId: user.businessId! },
+      where: { id, businessId: user.businessId!, deletedAt: null },
     });
     if (!product) throw new NotFoundException('Product not found');
 
-    const deleted = await this.prisma.product.delete({
+    const deleted = await this.prisma.product.update({
       where: { id },
+      data: { deletedAt: new Date() },
     });
 
     await this.activityLogs.log({

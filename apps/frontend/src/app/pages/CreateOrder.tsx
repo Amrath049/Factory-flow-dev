@@ -105,7 +105,7 @@ export function CreateOrder() {
         setItems([
           {
             productId: first.id,
-            quantity: 100,
+            quantity: 1,
             priceType: defaultType,
             unitPrice: defaultPrice,
             customPriceInput: String(defaultPrice),

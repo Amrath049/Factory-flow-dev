@@ -16,6 +16,7 @@ export class InventoryService {
 
     const where: any = {
       businessId,
+      deletedAt: null,
       ...(trimmed ? { name: { contains: trimmed, mode: 'insensitive' } } : {}),
     };
 

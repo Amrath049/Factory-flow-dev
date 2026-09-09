@@ -67,7 +67,7 @@ export function Sidebar() {
         <div className="p-6 border-b border-gray-200">
           <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
             <span className="w-7 h-7 bg-blue-600 text-white rounded-lg flex items-center justify-center text-xs font-black">FF</span>
-            Factory Dashboard
+            Factory Flow
           </h1>
         </div>
 

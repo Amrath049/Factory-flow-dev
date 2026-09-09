@@ -114,6 +114,7 @@ model Product {
   name              String
   price             Float?
   discountedPrice   Float?
+  deletedAt         DateTime?
   orderItems        OrderItem[]
   inventory         Inventory?
   productionEntries ProductionEntry[]
