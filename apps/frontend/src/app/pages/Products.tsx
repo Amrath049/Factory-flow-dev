@@ -212,7 +212,7 @@ export function Products() {
                 type="text"
                 value={productName}
                 onChange={(e) => setProductName(e.target.value)}
-                placeholder="e.g., 10 inch Round Areca Leaf Plate"
+                placeholder="enter name"
                 className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
                 required
                 autoFocus
@@ -222,7 +222,7 @@ export function Products() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold uppercase text-gray-600 mb-1">
-                  Standard Price (₹) <span className="text-gray-400 font-normal">(Optional)</span>
+                  Standard Price (₹) <span className="text-gray-400 font-normal"></span>
                 </label>
                 <input
                   type="number"

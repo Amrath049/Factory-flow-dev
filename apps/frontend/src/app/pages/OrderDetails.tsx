@@ -99,55 +99,65 @@ export function OrderDetails() {
     }
   };
 
-  const handleDownloadInvoice = () => {
+  const handleDownloadInvoice = async () => {
     if (!invoicePrintRef.current || downloadingPdf) return;
     setDownloadingPdf(true);
+    toast.info("Generating invoice PDF...");
 
     try {
-      const printContent = invoicePrintRef.current.cloneNode(true) as HTMLElement;
+      // Import html2canvas and jsPDF dynamically
+      const html2canvas = (await import("html2canvas")).default;
+      const { jsPDF } = await import("jspdf");
 
-      const printStyle = document.createElement("style");
-      printStyle.textContent = `
-        @media print {
-          body > *:not(#ff-print-root) { display: none !important; }
-          #ff-print-root {
-            display: block !important;
-            position: fixed;
-            inset: 0;
-            background: #ffffff;
-            z-index: 99999;
-            padding: 0;
-            margin: 0;
-            font-family: system-ui, -apple-system, sans-serif;
-          }
-          * {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-            box-sizing: border-box !important;
-          }
-          @page { margin: 8mm; size: A4 portrait; }
-        }
-      `;
+      const element = invoicePrintRef.current;
 
-      const printRoot = document.createElement("div");
-      printRoot.id = "ff-print-root";
-      printRoot.style.display = "none";
-      printRoot.appendChild(printContent);
+      // Temporarily make it visible in a hidden wrapper offscreen for clean rendering
+      const container = document.createElement("div");
+      container.style.position = "fixed";
+      container.style.top = "-9999px";
+      container.style.left = "-9999px";
+      container.style.width = "794px"; // Standard A4 pixel width at 96 DPI
+      container.style.background = "#ffffff";
+      document.body.appendChild(container);
 
-      document.head.appendChild(printStyle);
-      document.body.appendChild(printRoot);
+      const clone = element.cloneNode(true) as HTMLElement;
+      clone.style.display = "block";
+      clone.style.width = "794px";
+      clone.style.minHeight = "auto";
+      container.appendChild(clone);
 
-      setTimeout(() => {
-        window.print();
-        setTimeout(() => {
-          if (document.head.contains(printStyle)) document.head.removeChild(printStyle);
-          if (document.body.contains(printRoot)) document.body.removeChild(printRoot);
-          setDownloadingPdf(false);
-        }, 500);
-      }, 150);
-      toast.success("Opening invoice print preview...");
+      // Wait briefly for images/fonts in clone to settle
+      await new Promise((r) => setTimeout(r, 150));
+
+      const canvas = await html2canvas(clone, {
+        scale: 2, // High resolution (2x)
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: "#ffffff",
+        logging: false,
+      });
+
+      document.body.removeChild(container);
+
+      const imgData = canvas.toDataURL("image/png");
+      const imgWidthMm = 210; // A4 standard width in mm
+      const imgHeightMm = (canvas.height * imgWidthMm) / canvas.width;
+
+      // Create PDF with custom page dimensions matching the content perfectly
+      const pdf = new jsPDF({
+        orientation: imgHeightMm > imgWidthMm ? "portrait" : "landscape",
+        unit: "mm",
+        format: [imgWidthMm, imgHeightMm],
+      });
+
+      pdf.addImage(imgData, "PNG", 0, 0, imgWidthMm, imgHeightMm);
+      pdf.save(`Invoice-${order.orderId}.pdf`);
+
+      toast.success("Invoice PDF downloaded!");
     } catch (err: any) {
-      toast.error("Failed to generate PDF invoice preview");
+      console.error("PDF generation failed:", err);
+      toast.error("Failed to generate PDF. Please try again.");
+    } finally {
       setDownloadingPdf(false);
     }
   };

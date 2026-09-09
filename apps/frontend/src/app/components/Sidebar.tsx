@@ -128,23 +128,7 @@ export function Sidebar() {
               {/* Sub-menu options */}
               {isInvoiceOpen && (
                 <ul className="mt-1 ml-4 pl-4 border-l-2 border-gray-100 space-y-1">
-                  <li>
-                    <Link
-                      to="/invoice"
-                      onClick={() => setIsOpen(false)}
-                      className={`
-                        flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors
-                        ${
-                          location.pathname === "/invoice"
-                            ? "bg-blue-50 text-blue-600 font-bold"
-                            : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                        }
-                      `}
-                    >
-                      <PlusCircle className="w-4 h-4" />
-                      <span>Generate Invoice</span>
-                    </Link>
-                  </li>
+       
                   <li>
                     <Link
                       to="/invoice/settings"
@@ -160,6 +144,24 @@ export function Sidebar() {
                     >
                       <Settings className="w-4 h-4" />
                       <span>Invoice Settings</span>
+                    </Link>
+                  </li>
+
+                             <li>
+                    <Link
+                      to="/invoice"
+                      onClick={() => setIsOpen(false)}
+                      className={`
+                        flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors
+                        ${
+                          location.pathname === "/invoice"
+                            ? "bg-blue-50 text-blue-600 font-bold"
+                            : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                        }
+                      `}
+                    >
+                      <PlusCircle className="w-4 h-4" />
+                      <span>Generate Invoice</span>
                     </Link>
                   </li>
                 </ul>

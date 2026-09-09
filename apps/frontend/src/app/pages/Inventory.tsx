@@ -196,7 +196,7 @@ export function Inventory() {
       {/* Stock Overview Tab */}
       {activeTab === "overview" && (
         <div className="space-y-6">
-          <div className="flex justify-end">
+          {/* <div className="flex justify-end">
             <button
               onClick={() => setShowStockForm(true)}
               className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-semibold text-sm shadow-xs transition-colors"
@@ -204,7 +204,7 @@ export function Inventory() {
               <Plus className="w-4 h-4" />
               Update Stock
             </button>
-          </div>
+          </div> */}
 
           {showStockForm && (
             <div className="bg-white rounded-2xl shadow-xs border border-gray-200 p-6">

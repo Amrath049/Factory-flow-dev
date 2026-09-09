@@ -56,7 +56,7 @@ export const InvoiceTemplateClassic = React.forwardRef<HTMLDivElement, Props>(
     const companyName = settings?.companyName;
     const tagline = settings?.tagline;
     const website = settings?.website || "";
-    const logoUrl = settings?.logoUrl || "/logo.png";
+    const logoUrl = settings?.logoUrl;
     const headerColor = settings?.headerColor || "#1e293b"; // Slate Navy (#1e293b)
 
     const address = [
@@ -86,6 +86,8 @@ export const InvoiceTemplateClassic = React.forwardRef<HTMLDivElement, Props>(
           background: "#ffffff",
           width: "100%",
           maxWidth: "800px",
+          display: "flex",
+          flexDirection: "column",
           margin: "0 auto",
           border: "1px solid #cbd5e1",
           boxSizing: "border-box",
@@ -271,7 +273,7 @@ export const InvoiceTemplateClassic = React.forwardRef<HTMLDivElement, Props>(
         </div>
 
         {/* ── Terms & Bank + Signature ──────────────────────────── */}
-        <div style={{ display: "flex", padding: "16px 24px", gap: "24px", borderTop: "1px solid #e2e8f0", fontSize: "12px" }}>
+        <div style={{ flex: 1, display: "flex", padding: "20px 24px", gap: "24px", borderTop: "1px solid #e2e8f0", fontSize: "12px", minHeight: "180px" }}>
           {/* Left: Terms & Bank */}
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: "bold", textTransform: "uppercase", color: "#64748b", fontSize: "11px", letterSpacing: "0.5px", marginBottom: "4px" }}>

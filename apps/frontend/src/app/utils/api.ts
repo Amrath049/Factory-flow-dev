@@ -47,6 +47,14 @@ async function request<T>(
   });
 
   if (res.status === 401) {
+    // If 401 happens on auth endpoints (e.g., login failure), don't reload page
+    if (path.startsWith('/auth/')) {
+      const error = await res.json().catch(() => ({ message: 'Invalid credentials' }));
+      const message = Array.isArray(error.message)
+        ? error.message[0]
+        : (error.message || error.error || 'Invalid credentials');
+      throw new Error(message);
+    }
     clearToken();
     window.location.href = '/login';
     throw new Error('Unauthorized');

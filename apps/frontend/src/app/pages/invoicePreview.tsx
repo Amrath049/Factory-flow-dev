@@ -1,6 +1,7 @@
 import { useLocation, useNavigate, Link } from "react-router";
 import { ArrowLeft, Download, Edit, MessageCircle } from "lucide-react";
 import { useRef, useState, useEffect } from "react";
+import { toast } from "sonner";
 import { InvoiceTemplateClassic } from "./InvoiceTemplateClassic";
 import { invoiceSettingsApi, InvoiceSettings } from "../utils/api";
 
@@ -69,49 +70,62 @@ export function InvoicePreview() {
   const [isDownloading, setIsDownloading] = useState(false);
   const companyName = settings?.companyName || "Our Factory";
 
-  const handleDownloadPDF = () => {
+  const handleDownloadPDF = async () => {
     if (!invoiceRef.current || isDownloading) return;
     setIsDownloading(true);
+    toast.info("Generating invoice PDF...");
 
-    const printContent = invoiceRef.current.cloneNode(true) as HTMLElement;
+    try {
+      const html2canvas = (await import("html2canvas")).default;
+      const { jsPDF } = await import("jspdf");
 
-    const printStyle = document.createElement("style");
-    printStyle.textContent = `
-      @media print {
-        body > *:not(#ff-print-root) { display: none !important; }
-        #ff-print-root {
-          display: block !important;
-          position: fixed;
-          inset: 0;
-          background: white;
-          z-index: 99999;
-          padding: 16px;
-          font-family: sans-serif;
-        }
-        * {
-          -webkit-print-color-adjust: exact !important;
-          print-color-adjust: exact !important;
-        }
-        @page { margin: 8mm; size: A4; }
-      }
-    `;
+      const element = invoiceRef.current;
 
-    const printRoot = document.createElement("div");
-    printRoot.id = "ff-print-root";
-    printRoot.style.display = "none";
-    printRoot.appendChild(printContent);
+      const container = document.createElement("div");
+      container.style.position = "fixed";
+      container.style.top = "-9999px";
+      container.style.left = "-9999px";
+      container.style.width = "794px";
+      container.style.background = "#ffffff";
+      document.body.appendChild(container);
 
-    document.head.appendChild(printStyle);
-    document.body.appendChild(printRoot);
+      const clone = element.cloneNode(true) as HTMLElement;
+      clone.style.display = "block";
+      clone.style.width = "794px";
+      container.appendChild(clone);
 
-    setTimeout(() => {
-      window.print();
-      setTimeout(() => {
-        document.head.removeChild(printStyle);
-        document.body.removeChild(printRoot);
-        setIsDownloading(false);
-      }, 500);
-    }, 150);
+      await new Promise((r) => setTimeout(r, 150));
+
+      const canvas = await html2canvas(clone, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: "#ffffff",
+        logging: false,
+      });
+
+      document.body.removeChild(container);
+
+      const imgData = canvas.toDataURL("image/png");
+      const imgWidthMm = 210;
+      const imgHeightMm = (canvas.height * imgWidthMm) / canvas.width;
+
+      const pdf = new jsPDF({
+        orientation: imgHeightMm > imgWidthMm ? "portrait" : "landscape",
+        unit: "mm",
+        format: [imgWidthMm, imgHeightMm],
+      });
+
+      pdf.addImage(imgData, "PNG", 0, 0, imgWidthMm, imgHeightMm);
+      pdf.save(`Invoice-${invoiceNumber}.pdf`);
+
+      toast.success("Invoice PDF downloaded!");
+    } catch (err: any) {
+      console.error("PDF generation failed:", err);
+      toast.error("Failed to generate PDF. Please try again.");
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   const handleShareWhatsApp = () => {
