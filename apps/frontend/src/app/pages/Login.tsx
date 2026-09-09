@@ -26,12 +26,13 @@ export function Login() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md border border-slate-200/80">
-        <div className="mb-8 text-center">
-          <div className="inline-flex items-center justify-center w-12 h-12 bg-blue-600 text-white font-black text-2xl rounded-xl shadow-md mb-3">
-            FF
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900">FactoryFlow SaaS</h1>
-          <p className="text-gray-500 mt-1 text-sm">Sign in to your factory management portal</p>
+        <div className="mb-8 text-center flex flex-col items-center">
+          <img
+            src="/factory-flow-logo.png"
+            alt="FactoryFlow"
+            className="h-30 w-auto object-contain mb-3"
+          />
+          <p className="text-gray-500 text-sm">Sign in to your factory management portal</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">

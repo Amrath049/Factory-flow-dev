@@ -64,11 +64,14 @@ export function Sidebar() {
           ${isOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
         `}
       >
-        <div className="p-6 border-b border-gray-200">
-          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-            <span className="w-7 h-7 bg-blue-600 text-white rounded-lg flex items-center justify-center text-xs font-black">FF</span>
-            Factory Flow
-          </h1>
+        <div className="px-5 py-4 border-b border-gray-200">
+          <Link to="/" className="flex items-center gap-2.5">
+            <img
+              src="/factory-flow-logo.png"
+              alt="FactoryFlow"
+              className="h-25 w-auto object-contain"
+            />
+          </Link>
         </div>
 
         <nav className="flex-1 p-4 overflow-y-auto space-y-1">
