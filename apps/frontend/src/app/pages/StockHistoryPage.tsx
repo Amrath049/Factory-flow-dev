@@ -37,10 +37,10 @@ export function StockHistoryPage() {
     if (!productId) return;
     Promise.all([
       inventoryApi.getStockHistory(productId),
-      inventoryApi.getOverview(),
-    ]).then(([hist, overview]) => {
+      inventoryApi.getOverview({ limit: 100 }),  // load all for product lookup
+    ]).then(([hist, overviewRes]) => {
       setHistory(hist);
-      const item: InventoryItem | undefined = overview.find((i) => i.productId === productId);
+      const item: InventoryItem | undefined = overviewRes.data.find((i) => i.productId === productId);
       if (item) {
         setProductName(item.productName);
         setCurrentStock(item.availableStock);
@@ -67,12 +67,12 @@ export function StockHistoryPage() {
         date: adjustDate,
       });
       // Refresh data inline
-      const [hist, overview] = await Promise.all([
+      const [hist, overviewRes] = await Promise.all([
         inventoryApi.getStockHistory(productId),
-        inventoryApi.getOverview(),
+        inventoryApi.getOverview({ limit: 100 }),
       ]);
       setHistory(hist);
-      const item = overview.find((i) => i.productId === productId);
+      const item = overviewRes.data.find((i) => i.productId === productId);
       if (item) setCurrentStock(item.availableStock);
       setPage(1);
       toast.success(`Stock ${change > 0 ? "added" : "deducted"} successfully.`);

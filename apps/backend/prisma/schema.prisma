@@ -10,25 +10,88 @@ datasource db {
   provider = "postgresql"
 }
 
-// ─── Enums ────────────────────────────────────────────────────────────────────
+// ─── Core Multi-Tenant Models ──────────────────────────────────────────────────
 
-enum OrderStatus {
-  PENDING
-  IN_PRODUCTION
-  DELIVERED
+model Business {
+  id                String            @id @default(uuid())
+  name              String
+  email             String?
+  phone             String?
+  address           String?
+  status            String            @default("ACTIVE")
+  plan              String            @default("BASIC")
+  users             User[]
+  customers         Customer[]
+  products          Product[]
+  orders            Order[]
+  productionEntries ProductionEntry[]
+  stockHistory      StockHistory[]
+  activityLogs      ActivityLog[]
+  invoiceSettings   InvoiceSettings?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 }
 
-// ─── Models ───────────────────────────────────────────────────────────────────
+model User {
+  id         String    @id @default(uuid())
+  email      String    @unique
+  password   String
+  name       String
+  role       String    @default("BUSINESS_ADMIN")
+  business   Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessId String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([businessId])
+}
+
+model InvoiceSettings {
+  id                 String   @id @default(uuid())
+  business           Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessId         String   @unique
+  companyName        String
+  tagline            String?
+  website            String?
+  logoUrl            String?
+  headerColor        String?  @default("#1e293b")
+  addressLine1       String?
+  addressLine2       String?
+  city               String?
+  state              String?
+  pincode            String?
+  phone              String?
+  email              String?
+  gstin              String?
+  pan                String?
+  bankName           String?
+  accountName        String?
+  accountNumber      String?
+  ifscCode           String?
+  branch             String?
+  termsAndConditions String?
+  declaration        String?
+  signatureTitle     String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+// ─── Domain Models ─────────────────────────────────────────────────────────────
 
 model Customer {
-  id        String    @id @default(uuid())
-  name      String
-  phone     String
-  email     String?
-  addresses Address[]
-  orders    Order[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id         String    @id @default(uuid())
+  business   Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessId String
+  name       String
+  phone      String
+  email      String?
+  addresses  Address[]
+  orders     Order[]
+  deletedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([businessId])
 }
 
 model Address {
@@ -45,29 +108,48 @@ model Address {
 }
 
 model Product {
-  id               String            @id @default(uuid())
-  name             String
-  orderItems       OrderItem[]
-  inventory        Inventory?
+  id                String            @id @default(uuid())
+  business          Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessId        String
+  name              String
+  price             Float?
+  discountedPrice   Float?
+  orderItems        OrderItem[]
+  inventory         Inventory?
   productionEntries ProductionEntry[]
-  stockHistory     StockHistory[]
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  stockHistory      StockHistory[]
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@index([businessId])
 }
 
 model Order {
-  id          String      @id @default(uuid())
-  orderNumber Int         @unique @default(autoincrement())
-  customer    Customer    @relation(fields: [customerId], references: [id])
-  customerId  String
-  address     Address     @relation(fields: [addressId], references: [id])
-  addressId   String
-  status      OrderStatus @default(PENDING)
-  deliveryDate DateTime
-  notes       String?
-  items       OrderItem[]
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id                String      @id @default(uuid())
+  business          Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessId        String
+  orderNumber       Int         @default(autoincrement())
+  customer          Customer    @relation(fields: [customerId], references: [id])
+  customerId        String
+  address           Address     @relation(fields: [addressId], references: [id])
+  addressId         String
+  status            String      @default("PENDING")
+  paymentStatus     String      @default("PENDING")
+  paymentMethod     String?
+  subtotal          Float       @default(0)
+  discountType      String?
+  discountValue     Float?
+  discountAmount    Float       @default(0)
+  discountReason    String?
+  additionalCharges String?
+  grandTotal        Float       @default(0)
+  deliveryDate      DateTime
+  notes             String?
+  items             OrderItem[]
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  @@index([businessId])
 }
 
 model OrderItem {
@@ -77,32 +159,41 @@ model OrderItem {
   product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   productId String
   quantity  Int
+  unitPrice Float    @default(0)
+  priceType String   @default("STANDARD")
+  totalPrice Float   @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model Inventory {
-  id                 String   @id @default(uuid())
-  product            Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  productId          String   @unique
-  availableStock     Int      @default(0)
-  dailyProductionRate Int     @default(0)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                  String   @id @default(uuid())
+  product             Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId           String   @unique
+  availableStock      Int      @default(0)
+  dailyProductionRate Int      @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 }
 
 model ProductionEntry {
-  id        String   @id @default(uuid())
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  productId String
-  quantity  Int
-  date      DateTime @db.Date
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(uuid())
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessId String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId  String
+  quantity   Int
+  date       DateTime @db.Date
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([businessId])
 }
 
 model StockHistory {
   id            String   @id @default(uuid())
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessId    String
   product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   productId     String
   previousStock Int
@@ -111,4 +202,24 @@ model StockHistory {
   reason        String?
   date          DateTime @db.Date
   createdAt     DateTime @default(now())
+
+  @@index([businessId])
+}
+
+model ActivityLog {
+  id          String   @id @default(uuid())
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessId  String
+  userId      String
+  userName    String
+  userEmail   String
+  action      String
+  entity      String
+  entityId    String?
+  description String
+  metadata    String?
+  createdAt   DateTime @default(now())
+
+  @@index([businessId])
+  @@index([createdAt])
 }

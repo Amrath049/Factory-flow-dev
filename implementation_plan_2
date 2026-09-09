@@ -1,0 +1,190 @@
+# Structural Enhancement & Activity Logging Plan for Factory-Flow
+
+Comprehensive overhaul of Product pricing, Order creation & status management, Customer soft deletion, and an industry-standard Audit & Activity Logging module.
+
+---
+
+## Architecture & Data Flow Overview
+
+```
+ ┌───────────────────────────────────────────────────────────────────────────────────┐
+ │                                   USER ACTION                                     │
+ │  (Create/Update Customer, Product, Order, Status Change, Payment, Invoice)         │
+ └─────────────────────────────────────────┬─────────────────────────────────────────┘
+                                           │
+                                           ▼
+ ┌───────────────────────────────────────────────────────────────────────────────────┐
+ │                               BACKEND INTERCEPTOR                                 │
+ │  1. Executes Domain Business Logic (Scoped by businessId)                         │
+ │  2. Enforces Decimal Rounding (Math.round(val * 100) / 100)                        │
+ │  3. Emits Audit Log Entry -> ActivityLog (userId, userName, action, details)      │
+ └─────────────────────────────────────────┬─────────────────────────────────────────┘
+                                           │
+         ┌─────────────────────────────────┼─────────────────────────────────┐
+         ▼                                 ▼                                 ▼
+┌─────────────────┐               ┌─────────────────┐               ┌─────────────────┐
+│     PRODUCT     │               │      ORDER      │               │   ACTIVITY LOG  │
+│ - price         │               │ - status        │               │ - userId        │
+│ - discountedPrc │               │ - paymentStatus │               │ - userName      │
+│ - stock         │               │ - discount &    │               │ - action        │
+└─────────────────┘               │   addlCharges   │               │ - entity & id   │
+                                  │ - invoice PDF   │               └─────────────────┘
+                                  └─────────────────┘
+```
+
+---
+
+## Key Design Principles & Constraints
+
+> [!IMPORTANT]
+> **Code-Level Enums Only**: All status and role enumerations (`OrderStatus`, `PaymentStatus`, `PaymentMethod`, `PriceType`, `Role`, `SubscriptionStatus`, `ActivityAction`) will be stored as `String` columns at the Database level, and strictly enforced via TypeScript types and DTO validators in code.
+
+> [!NOTE]
+> **2-Decimal Rounding**: All price calculations (unit price, subtotal, discount amounts, additional charges, and grand total) will be rounded off to 2 decimal places using a central utility (`Math.round(value * 100) / 100`).
+
+---
+
+## Proposed Changes
+
+### 1. Database Schema Layer (`apps/backend/prisma/schema.prisma`)
+
+#### [MODIFY] [schema.prisma](file:///d:/ProjectsRecent/Factory-flow-dev/apps/backend/prisma/schema.prisma)
+
+1. **Remove DB Level Enums**:
+   - Replace `enum OrderStatus`, `enum Role`, `enum SubscriptionStatus` with plain `String` database columns and default string values.
+
+2. **Model Schema Modifications**:
+   - **`Product`**:
+     - Add `price Float?` (optional standard list price).
+     - Add `discountedPrice Float?` (optional discounted promotional price).
+   - **`Order`**:
+     - Update `status String @default("PENDING")` (`PENDING`, `DELIVERED`, `CANCELLED`).
+     - Add `paymentStatus String @default("PENDING")` (`PENDING`, `COMPLETED`).
+     - Add `paymentMethod String?` (`CASH`, `ONLINE`, `BANK_TRANSFER`, `UPI`, `CHEQUE`).
+     - Add `subtotal Float @default(0)`.
+     - Add `discountType String?` (`flat` or `percentage`).
+     - Add `discountValue Float?`.
+     - Add `discountAmount Float @default(0)`.
+     - Add `discountReason String?`.
+     - Add `additionalCharges String?` (JSON stringified array of `{ title: string, amount: number, reason?: string }`).
+     - Add `grandTotal Float @default(0)`.
+   - **`OrderItem`**:
+     - Add `unitPrice Float @default(0)`.
+     - Add `priceType String @default("STANDARD")` (`STANDARD`, `DISCOUNTED`, `CUSTOM`).
+     - Add `totalPrice Float @default(0)`.
+   - **`Customer`**:
+     - Add `deletedAt DateTime?` (Soft deletion support).
+     - Update queries to filter `where: { deletedAt: null }`.
+
+3. **New Model: `ActivityLog`**:
+   - Fields: `id`, `businessId`, `userId`, `userName`, `userEmail`, `action`, `entity`, `entityId`, `description`, `metadata String?`, `createdAt`.
+   - Indexing: `@@index([businessId])`, `@@index([createdAt])`.
+
+---
+
+### 2. Backend API Services & Controllers (`apps/backend/src`)
+
+#### [NEW] [activity-logs.module.ts](file:///d:/ProjectsRecent/Factory-flow-dev/apps/backend/src/activity-logs/activity-logs.module.ts)
+- **`ActivityLogsService`**: Helper service to log actions (`logAction(businessId, userId, action, entity, entityId, description, metadata)`).
+- **`GET /api/activity-logs`**: Searchable & filterable paginated log list for the current business tenant.
+
+#### [MODIFY] [customers.service.ts](file:///d:/ProjectsRecent/Factory-flow-dev/apps/backend/src/customers/customers.service.ts)
+- Soft Delete: `DELETE /api/customers/:id` sets `deletedAt = new Date()` instead of raw delete.
+- Update all list/read operations to exclude soft-deleted records (`where: { deletedAt: null }`).
+- Emit Activity Logs for `CUSTOMER_CREATE`, `CUSTOMER_UPDATE`, `CUSTOMER_DELETE`.
+
+#### [MODIFY] [products.service.ts](file:///d:/ProjectsRecent/Factory-flow-dev/apps/backend/src/products/products.service.ts)
+- Accept optional `price` and `discountedPrice` on create and update.
+- Accept optional `initialStock` on product creation to auto-create inventory record.
+- Emit Activity Logs for `PRODUCT_CREATE`, `PRODUCT_UPDATE`, `PRODUCT_DELETE`.
+
+#### [MODIFY] [orders.service.ts](file:///d:/ProjectsRecent/Factory-flow-dev/apps/backend/src/orders/orders.service.ts)
+- **Order Creation**:
+  - Accept `subtotal`, `discountType`, `discountValue`, `discountAmount`, `discountReason`, `additionalCharges`, `grandTotal`, `paymentStatus`, `paymentMethod`.
+  - For each `OrderItem`, store `unitPrice`, `priceType` (`STANDARD` | `DISCOUNTED` | `CUSTOM`), and `totalPrice`.
+  - Deduct inventory or check stock as required.
+- **Status Updates & Cancellation**:
+  - Remove `IN_PRODUCTION` status. Support `PENDING`, `DELIVERED`, `CANCELLED`.
+  - When status changes to `CANCELLED`:
+    - Restore stock in `Inventory`.
+    - Create a `StockHistory` entry with reason `"Restored due to Order Cancellation (ORD-xxx)"`.
+- **Payment Status Update**:
+  - Add endpoint `PATCH /api/orders/:id/payment-status` (`PENDING` -> `COMPLETED`).
+- Emit Activity Logs for `ORDER_CREATE`, `ORDER_STATUS_UPDATE`, `ORDER_PAYMENT_UPDATE`.
+
+---
+
+### 3. Frontend UI & State Overhaul (`apps/frontend/src`)
+
+#### [MODIFY] [api.ts](file:///d:/ProjectsRecent/Factory-flow-dev/apps/frontend/src/app/utils/api.ts)
+- Update interfaces for `Product`, `Order`, `OrderItem`, `Customer`, and add `ActivityLog`.
+- Add `activityLogsApi.list()`.
+- Add `ordersApi.updatePaymentStatus(id, paymentStatus)`.
+- Add `customersApi.delete(id)`.
+
+#### [MODIFY] Products Page (`Products.tsx`)
+- Add `price` and `discountedPrice` input fields to Add/Edit Product modal.
+- Display List Price and Discounted Price badges on product cards.
+
+#### [MODIFY] Order Creation Page (`CreateOrder.tsx`)
+- **Self-Contained All-In-One Layout**:
+  1. **Customer Selection**: Dropdown + Quick Add Customer modal.
+  2. **Product Line Items**:
+     - Product dropdown showing Available Stock badge.
+     - Auto-fills unit price with `discountedPrice` (if available) or `price`.
+     - Price selector / Custom price toggle (tracks `STANDARD`, `DISCOUNTED`, `CUSTOM`).
+     - **Quick Stock Update Modal/Button**: Directly adjust product stock without leaving the order creation screen if stock is insufficient.
+  3. **Order Financials**:
+     - Discount (Flat or Percentage + reason).
+     - Additional Charges (Transport, Packaging, etc.).
+  4. **Payment Options**:
+     - Payment Status (`PENDING` / `COMPLETED`).
+     - Payment Method (`CASH`, `ONLINE`, `BANK_TRANSFER`, `UPI`, `CHEQUE`).
+  5. Live 2-decimal rounded order summary and submit.
+
+#### [MODIFY] Order Details Page (`OrderDetails.tsx`)
+- Display Order Status (`PENDING`, `DELIVERED`, `CANCELLED`) dropdown with status change action.
+- Display Payment Status (`COMPLETED` / `PENDING`) with **"Mark as Paid"** button.
+- Display Payment Method badge (`CASH`, `ONLINE`, etc.).
+- Display line items with `priceType` badges (`Standard`, `Discounted`, `Custom`).
+- Display Subtotal, Discounts, Additional Charges, and Grand Total.
+- Add **"Download / View Invoice PDF"** button directly on Order Details page, which renders and prints the complete tax invoice.
+
+#### [NEW] Activity Logs Page (`Logs.tsx`)
+- Add **Logs** menu item to the Sidebar under Navigation.
+- Displays filterable audit log history table (User Name, Action badge, Entity, Description, Date & Time).
+
+#### [MODIFY] Customers Page (`Customers.tsx`)
+- Add "Delete Customer" action button with confirmation dialog for soft-deletion.
+
+---
+
+## Verification Plan
+
+### Automated Tests & Checks
+1. **Prisma DB Migration**:
+   ```bash
+   cd apps/backend
+   npx prisma db push
+   npx prisma generate
+   ```
+2. **Backend & Frontend Production Builds**:
+   ```bash
+   cd apps/backend && npm run build
+   cd apps/frontend && npm run build
+   ```
+
+### Manual Verification
+1. **Product Pricing & Stock**:
+   - Create a Product with List Price ₹100 and Discounted Price ₹80.
+2. **Streamlined Order Placement**:
+   - Create an Order: Select Product. Verify unit price auto-populates as ₹80 (`DISCOUNTED`).
+   - Switch to `CUSTOM` price ₹75. Check current stock badge. Test inline stock update if stock is low.
+   - Set Discount ₹50 and Transport Charge ₹100. Select Payment Method "UPI" and Payment Status "Completed".
+3. **Order Status & Cancellation Stock Restores**:
+   - Mark Order as Delivered -> verify stock deducts.
+   - Change Order Status to `CANCELLED` -> verify stock is restored and `StockHistory` entry is created.
+4. **Direct Invoice PDF Download**:
+   - Open Order Details -> click "Download Invoice PDF" -> verify generated PDF renders correct customer, items, prices, discounts, and custom invoice settings.
+5. **Activity Log Verification**:
+   - Navigate to `/logs` in Sidebar -> verify audit logs exist for Customer creation, Order placement, Payment update, and Customer soft-delete.

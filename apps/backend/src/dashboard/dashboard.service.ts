@@ -1,12 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { OrderStatus } from '@prisma/client';
 
 @Injectable()
 export class DashboardService {
   constructor(private prisma: PrismaService) {}
 
-  async getSummary() {
+  async getSummary(businessId: string) {
     const today = new Date();
     const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const endOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
@@ -15,26 +14,28 @@ export class DashboardService {
       totalCustomers,
       totalProducts,
       totalOrders,
-      ordersInProduction,
+      pendingOrders,
       recentOrders,
       inventoryData,
       productionToday,
     ] = await Promise.all([
-      this.prisma.customer.count(),
-      this.prisma.product.count(),
-      this.prisma.order.count(),
-      this.prisma.order.count({ where: { status: OrderStatus.IN_PRODUCTION } }),
+      this.prisma.customer.count({ where: { businessId, deletedAt: null } }),
+      this.prisma.product.count({ where: { businessId } }),
+      this.prisma.order.count({ where: { businessId } }),
+      this.prisma.order.count({ where: { businessId, status: 'PENDING' } }),
       this.prisma.order.findMany({
+        where: { businessId },
         take: 5,
         orderBy: { createdAt: 'desc' },
         include: { customer: { select: { name: true } } },
       }),
       this.prisma.product.findMany({
+        where: { businessId },
         take: 5,
         include: {
           inventory: true,
           orderItems: {
-            where: { order: { status: { not: OrderStatus.DELIVERED } } },
+            where: { order: { businessId, status: { notIn: ['DELIVERED', 'CANCELLED'] } } },
           },
         },
         orderBy: { name: 'asc' },
@@ -42,6 +43,7 @@ export class DashboardService {
       this.prisma.productionEntry.aggregate({
         _sum: { quantity: true },
         where: {
+          businessId,
           date: { gte: startOfToday, lt: endOfToday },
         },
       }),
@@ -49,6 +51,7 @@ export class DashboardService {
 
     const totalAvailableStock = await this.prisma.inventory.aggregate({
       _sum: { availableStock: true },
+      where: { product: { businessId } },
     });
 
     const stockOverview = inventoryData.map((p) => {
@@ -68,7 +71,8 @@ export class DashboardService {
       totalCustomers,
       totalProducts,
       totalOrders,
-      ordersInProduction,
+      pendingOrders,
+      ordersInProduction: pendingOrders,
       totalAvailableStock: totalAvailableStock._sum.availableStock ?? 0,
       productionToday: productionToday._sum.quantity ?? 0,
       recentOrders: recentOrders.map((o) => ({

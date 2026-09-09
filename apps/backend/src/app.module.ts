@@ -7,6 +7,9 @@ import { ProductsModule } from './products/products.module';
 import { OrdersModule } from './orders/orders.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { AdminModule } from './admin/admin.module';
+import { InvoiceSettingsModule } from './invoice-settings/invoice-settings.module';
+import { ActivityLogsModule } from './activity-logs/activity-logs.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -14,6 +17,9 @@ import { AppController } from './app.controller';
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     AuthModule,
+    AdminModule,
+    InvoiceSettingsModule,
+    ActivityLogsModule,
     CustomersModule,
     ProductsModule,
     OrdersModule,

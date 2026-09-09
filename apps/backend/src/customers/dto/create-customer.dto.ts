@@ -1,21 +1,28 @@
-import { IsEmail, IsNotEmpty, IsOptional, IsString, ValidateNested, IsArray } from 'class-validator';
+import {
+  IsEmail,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  ValidateNested,
+  IsArray,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateAddressDto {
   @IsString()
-  @IsNotEmpty()
+  @IsOptional()
   addressLine: string;
 
   @IsString()
-  @IsNotEmpty()
+  @IsOptional()
   city: string;
 
   @IsString()
-  @IsNotEmpty()
+  @IsOptional()
   state: string;
 
   @IsString()
-  @IsNotEmpty()
+  @IsOptional()
   pincode: string;
 }
 

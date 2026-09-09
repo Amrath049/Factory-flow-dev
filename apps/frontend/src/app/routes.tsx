@@ -11,7 +11,9 @@ import { CreateOrder } from "./pages/CreateOrder";
 import { Inventory } from "./pages/Inventory";
 import { StockHistoryPage } from "./pages/StockHistoryPage";
 import { InvoiceGenerator } from "./pages/invoiceGenerator";
+import { InvoiceSettingsTab } from "./pages/InvoiceSettingsTab";
 import { InvoicePreview } from "./pages/invoicePreview";
+import { Logs } from "./pages/Logs";
 import { isLoggedIn } from "./utils/api";
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
@@ -26,7 +28,6 @@ function ProtectedLayout(props: { title: string }) {
     </AuthGuard>
   );
 }
-
 
 export const router = createBrowserRouter([
   {
@@ -124,12 +125,32 @@ export const router = createBrowserRouter([
     ],
   },
   {
+    path: "/logs",
+    element: <ProtectedLayout title="Activity Logs" />,
+    children: [
+      {
+        index: true,
+        Component: Logs,
+      },
+    ],
+  },
+  {
     path: "/invoice",
-    element: <ProtectedLayout title="Invoice" />,
+    element: <ProtectedLayout title="Generate Invoice" />,
     children: [
       {
         index: true,
         Component: InvoiceGenerator,
+      },
+    ],
+  },
+  {
+    path: "/invoice/settings",
+    element: <ProtectedLayout title="Invoice Settings" />,
+    children: [
+      {
+        index: true,
+        Component: InvoiceSettingsTab,
       },
     ],
   },

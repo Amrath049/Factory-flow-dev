@@ -7,23 +7,36 @@ import {
   Warehouse,
   Menu,
   X,
-  FileText
+  FileText,
+  ChevronDown,
+  ChevronRight,
+  Settings,
+  PlusCircle,
+  ShieldAlert
 } from "lucide-react";
-import { useState } from "react";
-
-const menuItems = [
-  { path: "/", label: "Dashboard", icon: LayoutDashboard },
-  { path: "/customers", label: "Customers", icon: Users },
-  { path: "/products", label: "Products", icon: Package },
-  { path: "/orders", label: "Orders", icon: ShoppingCart },
-  { path: "/inventory", label: "Inventory", icon: Warehouse },
-  { path: "/invoice", label: "Invoice", icon: FileText },
-
-];
+import { useState, useEffect } from "react";
 
 export function Sidebar() {
   const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
+  const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
+
+  useEffect(() => {
+    if (location.pathname.startsWith("/invoice")) {
+      setIsInvoiceOpen(true);
+    }
+  }, [location.pathname]);
+
+  const menuItems = [
+    { path: "/", label: "Dashboard", icon: LayoutDashboard },
+    { path: "/customers", label: "Customers", icon: Users },
+    { path: "/products", label: "Products", icon: Package },
+    { path: "/orders", label: "Orders", icon: ShoppingCart },
+    { path: "/inventory", label: "Inventory", icon: Warehouse },
+    { path: "/logs", label: "Activity Logs", icon: ShieldAlert },
+  ];
+
+  const isInvoiceActive = location.pathname.startsWith("/invoice");
 
   return (
     <>
@@ -52,10 +65,13 @@ export function Sidebar() {
         `}
       >
         <div className="p-6 border-b border-gray-200">
-          <h1 className="text-xl font-semibold text-gray-900">Factory Dashboard</h1>
+          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+            <span className="w-7 h-7 bg-blue-600 text-white rounded-lg flex items-center justify-center text-xs font-black">FF</span>
+            Factory Dashboard
+          </h1>
         </div>
 
-        <nav className="flex-1 p-4 overflow-y-auto">
+        <nav className="flex-1 p-4 overflow-y-auto space-y-1">
           <ul className="space-y-1">
             {menuItems.map((item) => {
               const Icon = item.icon;
@@ -67,10 +83,10 @@ export function Sidebar() {
                     to={item.path}
                     onClick={() => setIsOpen(false)}
                     className={`
-                      flex items-center gap-3 px-4 py-3 rounded-lg transition-colors
+                      flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-sm font-medium
                       ${
                         isActive
-                          ? "bg-blue-50 text-blue-600"
+                          ? "bg-blue-50 text-blue-600 font-semibold"
                           : "text-gray-700 hover:bg-gray-50"
                       }
                     `}
@@ -81,12 +97,77 @@ export function Sidebar() {
                 </li>
               );
             })}
+
+            {/* Collapsible Invoice Menu */}
+            <li>
+              <button
+                onClick={() => setIsInvoiceOpen(!isInvoiceOpen)}
+                className={`
+                  w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors text-sm font-medium
+                  ${
+                    isInvoiceActive
+                      ? "bg-blue-50/70 text-blue-600 font-semibold"
+                      : "text-gray-700 hover:bg-gray-50"
+                  }
+                `}
+              >
+                <div className="flex items-center gap-3">
+                  <FileText className="w-5 h-5" />
+                  <span>Invoice</span>
+                </div>
+                {isInvoiceOpen ? (
+                  <ChevronDown className="w-4 h-4 text-gray-400" />
+                ) : (
+                  <ChevronRight className="w-4 h-4 text-gray-400" />
+                )}
+              </button>
+
+              {/* Sub-menu options */}
+              {isInvoiceOpen && (
+                <ul className="mt-1 ml-4 pl-4 border-l-2 border-gray-100 space-y-1">
+                  <li>
+                    <Link
+                      to="/invoice"
+                      onClick={() => setIsOpen(false)}
+                      className={`
+                        flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors
+                        ${
+                          location.pathname === "/invoice"
+                            ? "bg-blue-50 text-blue-600 font-bold"
+                            : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                        }
+                      `}
+                    >
+                      <PlusCircle className="w-4 h-4" />
+                      <span>Generate Invoice</span>
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      to="/invoice/settings"
+                      onClick={() => setIsOpen(false)}
+                      className={`
+                        flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors
+                        ${
+                          location.pathname === "/invoice/settings"
+                            ? "bg-blue-50 text-blue-600 font-bold"
+                            : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                        }
+                      `}
+                    >
+                      <Settings className="w-4 h-4" />
+                      <span>Invoice Settings</span>
+                    </Link>
+                  </li>
+                </ul>
+              )}
+            </li>
           </ul>
         </nav>
 
         <div className="p-4 border-t border-gray-200">
-          <div className="text-xs text-gray-500">
-            Version 1.0.0
+          <div className="text-xs text-gray-500 font-medium">
+            FactoryFlow SaaS v2.0
           </div>
         </div>
       </aside>

@@ -1,0 +1,81 @@
+# Factory-Flow Multi-Tenant SaaS Transformation Walkthrough
+
+We have successfully transformed **Factory-Flow** from a single-factory application into a **Multi-Tenant B2B SaaS Platform** ready to support multiple manufacturing business subscribers with strict tenant data isolation, dynamic custom invoicing, Cloudinary logo uploads, and admin provisioning.
+
+---
+
+## What Was Accomplished
+
+### 1. Multi-Tenant Database & Schema (`Prisma`)
+- **New Core Models**:
+  - `Business`: Tenant business entity (`id`, `name`, `email`, `phone`, `address`, `status`, `plan`).
+  - `User`: User authentication model (`id`, `email`, `password`, `name`, `role`, `businessId`).
+  - `InvoiceSettings`: Per-tenant invoice template configuration (`companyName`, `tagline`, `logoUrl`, `addressLine1`, `gstin`, `bankName`, `accountNumber`, `ifscCode`, `branch`, `termsAndConditions`, `signatureTitle`).
+- **Tenant Isolation**: Attached `businessId` foreign key and indexes to all domain entities (`Customer`, `Product`, `Order`, `ProductionEntry`, `StockHistory`).
+
+### 2. Authentication & Tenant Authorization (`NestJS`)
+- Replaced hardcoded `.env` email/password with database lookup using `bcryptjs` password hashing.
+- Encoded `userId`, `businessId`, `role`, `email`, and `businessName` into JWT payload.
+- Added `@CurrentUser('businessId')` parameter decorator to automatically inject the requesting user's tenant ID across controllers.
+- Updated domain services (`customers`, `products`, `orders`, `inventory`, `dashboard`) so all database reads, writes, and updates are strictly isolated per tenant.
+
+### 3. Postman / API Provisioning Endpoint
+- Added `POST /api/admin/tenants` endpoint for onboarding new businesses directly via Postman.
+- Automatically creates the `Business` tenant, initial `InvoiceSettings`, and the initial `BUSINESS_ADMIN` account in an atomic Prisma transaction.
+- Ready for future expansion into a full Super Admin Panel UI (`GET /api/admin/tenants`, `PATCH /api/admin/tenants/:id/status`).
+
+### 4. Cloudinary Logo Upload Integration
+- Implemented `CloudinaryService` to upload business logos directly to Cloudinary.
+- **Tenant Mapping**: Logos are uploaded under `factory-flow/tenants/{businessId}/logo_{timestamp}`. Even if two businesses upload files with the exact same name (e.g. `logo.png`), they are securely isolated into separate folders and unique public IDs.
+- Includes a graceful fallback if Cloudinary credentials are not set in `.env`.
+
+### 5. Invoice Section Overhaul (Dual-Tab Navigation)
+- Refactored the `/invoice` page into **2 Tabs**:
+  - **Tab 1: Invoice Settings**: Manage Business Logo (Cloudinary upload or URL), Company Name, Tagline, Address, GSTIN, Bank Account details, Terms & Conditions, and Authorized Signature label. Includes a real-time live header preview.
+  - **Tab 2: Generate Invoice**: Standard invoice generator form that pulls the logged-in business's saved `InvoiceSettings` and renders dynamic invoice templates instead of hardcoded SIRI ENTERPRISES formatting.
+
+---
+
+## Seed Accounts for Testing
+
+The database has been seeded with two distinct business accounts to test multi-tenancy data isolation:
+
+### Tenant 1: Siri Enterprises
+- **Email**: `admin@factory.com`
+- **Password**: `factory@123`
+- **Business**: Siri Enterprises (Areca Palm Leaf Plates Manufacturer, Udupi)
+
+### Tenant 2: GreenLeaf Manufacturing
+- **Email**: `admin@greenleaf.com`
+- **Password**: `factory@123`
+- **Business**: GreenLeaf Manufacturing (Bangalore)
+
+---
+
+## Postman API Guide: Provisioning a New Business Tenant
+
+To create a new subscriber business and admin user from Postman, send a `POST` request to:
+
+**URL**: `http://localhost:3000/api/admin/tenants`  
+**Header**: `Content-Type: application/json`
+
+**Sample JSON Body**:
+```json
+{
+  "businessName": "Sri Rama Areca Works",
+  "businessEmail": "contact@sriramaareca.com",
+  "phone": "9845012345",
+  "address": "NH 66, Kundapura, Karnataka - 576201",
+  "plan": "PRO",
+  "adminName": "Rama Krishna",
+  "adminEmail": "admin@sriramaareca.com",
+  "adminPassword": "password123"
+}
+```
+
+---
+
+## Verification & Build Results
+- **Backend Build**: Clean compilation (`npm run build` -> exit code 0).
+- **Frontend Build**: Vite production build succeeded in 4.78s with 0 errors.
+- **Database**: Prisma schema pushed and initial multi-tenant seed executed cleanly.

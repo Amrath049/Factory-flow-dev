@@ -1,10 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router";
-import { Plus, Trash2, Percent } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { customersApi, productsApi, Customer, Product } from "../utils/api";
+import { SearchableSelect, OptionItem } from "../components/ui/SearchableSelect";
 
 interface ProductRow {
   id: string;
+  productId?: string;
   productName: string;
   quantity: number;
   price: number;
@@ -35,17 +37,15 @@ export function InvoiceGenerator() {
   const [apiProducts, setApiProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    Promise.all([customersApi.list(), productsApi.list()])
-      .then(([customers, products]) => {
-        setApiCustomers(customers);
-        setApiProducts(products);
-      })
-      .finally(() => setLoading(false));
-  }, []);
+  // Search states
+  const [searchingCustomer, setSearchingCustomer] = useState(false);
+  const [searchingProduct, setSearchingProduct] = useState(false);
+  const customerSearchTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const productSearchTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Customer Details — pre-filled from edit state if present
-  const [selectedCustomer, setSelectedCustomer] = useState(edit?.customer.name ?? "");
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
+  const [selectedCustomerName, setSelectedCustomerName] = useState(edit?.customer.name ?? "");
   const [phone, setPhone] = useState(edit?.customer.phone ?? "");
   const [address, setAddress] = useState(edit?.customer.address ?? "");
 
@@ -65,13 +65,78 @@ export function InvoiceGenerator() {
     edit?.additionalCharges.map((c, i) => ({ ...c, id: `edit-charge-${i}` })) ?? []
   );
 
-  // Auto-populate customer details
-  const handleCustomerChange = (customerName: string) => {
-    setSelectedCustomer(customerName);
-    const customer = apiCustomers.find((c) => c.name === customerName);
+  useEffect(() => {
+    Promise.all([customersApi.list({ limit: 10 }), productsApi.list({ limit: 10 })])
+      .then(([customersRes, productsRes]) => {
+        setApiCustomers(customersRes.data);
+        setApiProducts(productsRes.data);
+
+        // If edit customer exists, find matching in initial batch if possible
+        if (edit?.customer.name) {
+          const match = customersRes.data.find(c => c.name === edit.customer.name);
+          if (match) setSelectedCustomerId(match.id);
+        }
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleCustomerSearchQuery = (query: string) => {
+    if (customerSearchTimerRef.current) {
+      clearTimeout(customerSearchTimerRef.current);
+    }
+    setSearchingCustomer(true);
+    customerSearchTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await customersApi.list({ search: query, limit: 10 });
+        setApiCustomers((prev) => {
+          const map = new Map<string, Customer>();
+          prev.forEach((c) => {
+            if (c.id === selectedCustomerId) map.set(c.id, c);
+          });
+          res.data.forEach((c) => map.set(c.id, c));
+          return Array.from(map.values());
+        });
+      } catch {
+        // Silent fail
+      } finally {
+        setSearchingCustomer(false);
+      }
+    }, 300);
+  };
+
+  const handleProductSearchQuery = (query: string) => {
+    if (productSearchTimerRef.current) {
+      clearTimeout(productSearchTimerRef.current);
+    }
+    setSearchingProduct(true);
+    productSearchTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await productsApi.list({ search: query, limit: 10 });
+        setApiProducts((prev) => {
+          const map = new Map<string, Product>();
+          const selectedProductIds = products.map((p) => p.productId).filter(Boolean);
+          prev.forEach((p) => {
+            if (selectedProductIds.includes(p.id)) map.set(p.id, p);
+          });
+          res.data.forEach((p) => map.set(p.id, p));
+          return Array.from(map.values());
+        });
+      } catch {
+        // Silent fail
+      } finally {
+        setSearchingProduct(false);
+      }
+    }, 300);
+  };
+
+  // Auto-populate customer details when selected via dropdown
+  const handleCustomerSelect = (customerId: string) => {
+    setSelectedCustomerId(customerId);
+    const customer = apiCustomers.find((c) => c.id === customerId);
     if (customer) {
+      setSelectedCustomerName(customer.name);
       setPhone(customer.phone);
-      const primaryAddress = customer.addresses[0];
+      const primaryAddress = customer.addresses?.[0];
       if (primaryAddress) {
         setAddress(
           `${primaryAddress.addressLine}, ${primaryAddress.city}, ${primaryAddress.state} - ${primaryAddress.pincode}`
@@ -94,12 +159,35 @@ export function InvoiceGenerator() {
     }
   };
 
+  const handleProductSelect = (rowId: string, productId: string) => {
+    const prod = apiProducts.find((p) => p.id === productId);
+    if (!prod) return;
+
+    const rate = prod.discountedPrice ?? prod.price ?? 0;
+    setProducts(products.map(p => {
+      if (p.id === rowId) {
+        const qty = p.quantity > 0 ? p.quantity : 1;
+        return {
+          ...p,
+          productId: prod.id,
+          productName: prod.name,
+          price: rate,
+          quantity: qty,
+          total: qty * rate,
+        };
+      }
+      return p;
+    }));
+  };
+
   const updateProduct = (id: string, field: keyof ProductRow, value: string | number) => {
     setProducts(products.map(p => {
       if (p.id === id) {
         const updated = { ...p, [field]: value };
         if (field === "quantity" || field === "price") {
-          updated.total = Number(updated.quantity) * Number(updated.price);
+          const qty = field === "quantity" ? Number(value) : p.quantity;
+          const prc = field === "price" ? Number(value) : p.price;
+          updated.total = qty * prc;
         }
         return updated;
       }
@@ -107,7 +195,7 @@ export function InvoiceGenerator() {
     }));
   };
 
-  // Additional Charges handlers
+  // Additional charge handlers
   const addAdditionalCharge = () => {
     setAdditionalCharges([
       ...additionalCharges,
@@ -127,373 +215,383 @@ export function InvoiceGenerator() {
 
   // Calculations
   const subtotal = products.reduce((sum, p) => sum + p.total, 0);
-  const discountAmount = discountType === "flat" 
-    ? discountValue 
-    : (subtotal * discountValue) / 100;
-  const additionalChargesTotal = additionalCharges.reduce((sum, c) => sum + c.amount, 0);
-  const grandTotal = subtotal - discountAmount + additionalChargesTotal;
+  
+  const discountAmount = discountType === "percentage" 
+    ? (subtotal * discountValue) / 100 
+    : discountValue;
 
-  // Validation
-  const hasValidProducts = products.some(p => p.productName && p.quantity > 0 && p.price > 0);
-  const hasCustomerDetails = selectedCustomer && phone && address;
+  const totalAdditionalCharges = additionalCharges.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
+
+  const grandTotal = Math.max(0, subtotal - discountAmount + totalAdditionalCharges);
+
+  const hasValidProducts = products.some(p => p.productName.trim() !== "" && p.quantity > 0 && p.price > 0);
+  const hasCustomerDetails = selectedCustomerName.trim() !== "" && phone.trim() !== "";
 
   const handleGenerateInvoice = () => {
     if (!hasValidProducts || !hasCustomerDetails) return;
 
     const invoiceData = {
-      customer: { name: selectedCustomer, phone, address },
-      products: products.filter(p => p.productName && p.quantity > 0),
-      discount: { type: discountType, value: discountValue, amount: discountAmount, reason: discountReason },
-      additionalCharges,
+      customer: {
+        name: selectedCustomerName,
+        phone,
+        address,
+      },
+      products: products.filter(p => p.productName.trim() !== ""),
+      discount: {
+        type: discountType,
+        value: discountValue,
+        amount: discountAmount,
+        reason: discountReason,
+      },
+      additionalCharges: additionalCharges.filter(c => c.title.trim() !== "" && c.amount > 0),
       subtotal,
       grandTotal,
-      date: new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+      date: new Date().toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }),
     };
 
     navigate("/invoice/preview", { state: invoiceData });
   };
 
+  // Options for SearchableSelect
+  const customerSelectOptions: OptionItem[] = apiCustomers.map((c) => ({
+    value: c.id,
+    label: c.name,
+    subtext: c.phone + (c.email ? ` • ${c.email}` : ""),
+  }));
+
+  const productSelectOptions: OptionItem[] = apiProducts.map((p) => {
+    const stock = p.inventory?.availableStock ?? 0;
+    return {
+      value: p.id,
+      label: p.name,
+      subtext: `Price: ₹${p.price ?? 0}${p.discountedPrice ? ` (Disc: ₹${p.discountedPrice})` : ""}`,
+      badge: `${stock} in stock`,
+      badgeColor: stock > 0 ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200",
+    };
+  });
+
+  if (loading) {
+    return (
+      <div className="py-12 text-center text-gray-500">
+        <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-500 border-t-transparent mb-3" />
+        <p>Loading invoice generator...</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6 pb-20 lg:pb-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900">Generate Invoice</h1>
-        <p className="text-gray-600 mt-1">Create and download professional invoices</p>
+    <div className="space-y-6 max-w-6xl mx-auto">
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 flex justify-between items-center">
+        <div>
+          <h2 className="text-xl font-bold text-gray-900">Generate Invoice</h2>
+          <p className="text-xs text-gray-500 mt-1">
+            Create and preview tax invoices for your factory customers.
+          </p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Form */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pb-20 lg:pb-0">
+        {/* Main Form Area */}
         <div className="lg:col-span-2 space-y-6">
           {/* Customer Details */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Customer Details</h2>
-            <div className="space-y-4">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+            <h2 className="text-lg font-bold text-gray-900 mb-4">Customer Details</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Select Customer *
+                </label>
+                <SearchableSelect
+                  options={customerSelectOptions}
+                  value={selectedCustomerId}
+                  onChange={handleCustomerSelect}
+                  onSearchQueryChange={handleCustomerSearchQuery}
+                  loading={searchingCustomer}
+                  placeholder="Search & select customer (10 results)..."
+                />
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Customer Name *
                 </label>
-                <select
-                  value={selectedCustomer}
-                  onChange={(e) => handleCustomerChange(e.target.value)}
-                  disabled={loading}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-400"
-                >
-                  <option value="">{loading ? "Loading customers..." : "Select a customer"}</option>
-                  {apiCustomers.map((customer) => (
-                    <option key={customer.id} value={customer.name}>
-                      {customer.name}
-                    </option>
-                  ))}
-                </select>
+                <input
+                  type="text"
+                  value={selectedCustomerName}
+                  onChange={(e) => setSelectedCustomerName(e.target.value)}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  placeholder="Enter or edit customer name"
+                />
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Phone Number *
                 </label>
                 <input
-                  type="text"
+                  type="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                   placeholder="Enter phone number"
                 />
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Address *
+                  Billing Address
                 </label>
                 <textarea
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter delivery address"
+                  rows={2}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  placeholder="Enter billing address"
                 />
               </div>
             </div>
           </div>
 
           {/* Product Details */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Product Details</h2>
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold text-gray-900">Products</h2>
+              <button
+                onClick={addProduct}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Add Row
+              </button>
+            </div>
+
             <div className="space-y-4">
               {products.map((product, index) => (
-                <div key={product.id} className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-start justify-between mb-3">
-                    <span className="text-sm font-medium text-gray-500">Product {index + 1}</span>
-                    {products.length > 1 && (
-                      <button
-                        onClick={() => removeProduct(product.id)}
-                        className="text-red-500 hover:text-red-700"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                    <div className="sm:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Product Name *
+                <div key={product.id} className="p-4 bg-gray-50 rounded-xl border border-gray-200 relative space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                    <div className="sm:col-span-5">
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        Product {index + 1} *
                       </label>
-                      <select
-                        value={product.productName}
-                        onChange={(e) => updateProduct(product.id, "productName", e.target.value)}
-                        disabled={loading}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-400"
-                      >
-                        <option value="">{loading ? "Loading products..." : "Select product"}</option>
-                        {apiProducts.map((p) => (
-                          <option key={p.id} value={p.name}>
-                            {p.name}
-                          </option>
-                        ))}
-                      </select>
+                      <SearchableSelect
+                        options={productSelectOptions}
+                        value={product.productId || ""}
+                        onChange={(val) => handleProductSelect(product.id, val)}
+                        onSearchQueryChange={handleProductSearchQuery}
+                        loading={searchingProduct}
+                        placeholder="Search product (10 results)..."
+                      />
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Quantity *
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        Qty *
                       </label>
                       <input
                         type="number"
-                        min="0"
+                        min="1"
                         value={product.quantity || ""}
-                        onChange={(e) => updateProduct(product.id, "quantity", Number(e.target.value))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onChange={(e) => updateProduct(product.id, "quantity", e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
                         placeholder="0"
                       />
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Price (₹) *
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        Rate (₹) *
                       </label>
                       <input
                         type="number"
-                        min="0"
                         step="0.01"
+                        min="0"
                         value={product.price || ""}
-                        onChange={(e) => updateProduct(product.id, "price", Number(e.target.value))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onChange={(e) => updateProduct(product.id, "price", e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
                         placeholder="0.00"
                       />
                     </div>
-                  </div>
-                  {product.total > 0 && (
-                    <div className="mt-3 pt-3 border-t border-gray-200">
-                      <p className="text-sm text-gray-600">
-                        Total: <span className="font-semibold text-gray-900">₹{product.total.toFixed(2)}</span>
-                      </p>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        Total (₹)
+                      </label>
+                      <input
+                        type="text"
+                        readOnly
+                        value={`₹${product.total.toFixed(2)}`}
+                        className="w-full px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg text-sm font-semibold text-gray-800"
+                      />
                     </div>
-                  )}
+
+                    <div className="sm:col-span-1 flex justify-end">
+                      {products.length > 1 && (
+                        <button
+                          onClick={() => removeProduct(product.id)}
+                          className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Remove Product"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               ))}
-              <button
-                onClick={addProduct}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                Add Product
-              </button>
             </div>
           </div>
 
-          {/* Discount */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Discount (Optional)</h2>
-            <div className="space-y-4">
-              <div className="flex gap-4">
-                <button
-                  onClick={() => setDiscountType("flat")}
-                  className={`flex-1 px-4 py-2 rounded-md font-medium transition-colors ${
-                    discountType === "flat"
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                  }`}
-                >
-                  Flat Amount
-                </button>
-                <button
-                  onClick={() => setDiscountType("percentage")}
-                  className={`flex-1 px-4 py-2 rounded-md font-medium transition-colors ${
-                    discountType === "percentage"
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                  }`}
-                >
-                  <Percent className="w-4 h-4 inline mr-1" />
-                  Percentage
-                </button>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Discount {discountType === "percentage" ? "Percentage" : "Amount (₹)"}
-                </label>
+          {/* Discount & Charges */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-6">
+            <h2 className="text-lg font-bold text-gray-900">Discounts & Additional Charges</h2>
+
+            {/* Discount Section */}
+            <div className="border-b border-gray-100 pb-5">
+              <label className="block text-sm font-semibold text-gray-800 mb-2">
+                Discount
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="flex rounded-lg border border-gray-300 overflow-hidden text-sm">
+                  <button
+                    onClick={() => setDiscountType("flat")}
+                    className={`flex-1 py-2 font-medium transition-colors ${
+                      discountType === "flat" ? "bg-blue-600 text-white" : "bg-white text-gray-700 hover:bg-gray-50"
+                    }`}
+                  >
+                    Flat (₹)
+                  </button>
+                  {/* <button
+                    onClick={() => setDiscountType("percentage")}
+                    className={`flex-1 py-2 font-medium border-l border-gray-300 transition-colors ${
+                      discountType === "percentage" ? "bg-blue-600 text-white" : "bg-white text-gray-700 hover:bg-gray-50"
+                    }`}
+                  >
+                    % Percent
+                  </button> */}
+                </div>
+
                 <input
                   type="number"
                   min="0"
-                  step={discountType === "percentage" ? "1" : "0.01"}
-                  max={discountType === "percentage" ? "100" : undefined}
+                  step="0.01"
                   value={discountValue || ""}
                   onChange={(e) => setDiscountValue(Number(e.target.value))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder={discountType === "percentage" ? "0" : "0.00"}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
+                  placeholder={discountType === "flat" ? "Amount in ₹" : "Percentage %"}
                 />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Reason (Optional)
-                </label>
+
                 <input
                   type="text"
                   value={discountReason}
                   onChange={(e) => setDiscountReason(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., Seasonal discount"
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
+                  placeholder="Reason (optional)"
                 />
               </div>
             </div>
-          </div>
 
-          {/* Additional Charges */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Additional Charges (Optional)</h2>
-            <div className="space-y-4">
-              {additionalCharges.map((charge, index) => (
-                <div key={charge.id} className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-start justify-between mb-3">
-                    <span className="text-sm font-medium text-gray-500">Charge {index + 1}</span>
-                    <button
-                      onClick={() => removeAdditionalCharge(charge.id)}
-                      className="text-red-500 hover:text-red-700"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Title
-                      </label>
-                      <input
-                        type="text"
-                        value={charge.title}
-                        onChange={(e) => updateAdditionalCharge(charge.id, "title", e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="e.g., Transport, Packing"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Amount (₹)
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={charge.amount || ""}
-                        onChange={(e) => updateAdditionalCharge(charge.id, "amount", Number(e.target.value))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="0.00"
-                      />
-                    </div>
-                    <div className="sm:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Reason (Optional)
-                      </label>
-                      <input
-                        type="text"
-                        value={charge.reason}
-                        onChange={(e) => updateAdditionalCharge(charge.id, "reason", e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="Enter reason"
-                      />
-                    </div>
-                  </div>
+            {/* Additional Charges */}
+            <div>
+              <div className="flex justify-between items-center mb-3">
+                <label className="block text-sm font-semibold text-gray-800">
+                  Additional Charges
+                </label>
+                <button
+                  onClick={addAdditionalCharge}
+                  className="inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add Charge
+                </button>
+              </div>
+
+              {additionalCharges.map((charge) => (
+                <div key={charge.id} className="flex gap-3 items-center mb-3">
+                  <input
+                    type="text"
+                    value={charge.title}
+                    onChange={(e) => updateAdditionalCharge(charge.id, "title", e.target.value)}
+                    placeholder="Title (e.g. Transport / Loading)"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={charge.amount || ""}
+                    onChange={(e) => updateAdditionalCharge(charge.id, "amount", Number(e.target.value))}
+                    placeholder="Amount ₹"
+                    className="w-32 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  />
+                  <button
+                    onClick={() => removeAdditionalCharge(charge.id)}
+                    className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               ))}
-              <button
-                onClick={addAdditionalCharge}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                Add Additional Charge
-              </button>
             </div>
           </div>
         </div>
 
-        {/* Summary Sidebar */}
+        {/* Sidebar Summary */}
         <div className="lg:col-span-1">
-          <div className="bg-white rounded-lg shadow p-6 lg:sticky lg:top-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Summary</h2>
-            <div className="space-y-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Subtotal</span>
-                <span className="font-medium text-gray-900">₹{subtotal.toFixed(2)}</span>
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 lg:sticky lg:top-24 space-y-4">
+            <h2 className="text-lg font-bold text-gray-900 border-b border-gray-100 pb-3">
+              Order Summary
+            </h2>
+
+            <div className="space-y-3 text-sm">
+              <div className="flex justify-between text-gray-600">
+                <span>Subtotal</span>
+                <span className="font-semibold text-gray-900">₹{subtotal.toFixed(2)}</span>
               </div>
-              
+
               {discountAmount > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">
-                    Discount {discountType === "percentage" && `(${discountValue}%)`}
-                  </span>
-                  <span className="font-medium text-green-600">-₹{discountAmount.toFixed(2)}</span>
+                <div className="flex justify-between text-emerald-600 font-medium">
+                  <span>Discount</span>
+                  <span>-₹{discountAmount.toFixed(2)}</span>
                 </div>
               )}
 
-              {additionalCharges.length > 0 && additionalCharges.some(c => c.amount > 0) && (
-                <div className="space-y-2 pt-2 border-t border-gray-200">
-                  <p className="text-sm font-medium text-gray-700">Additional Charges:</p>
-                  {additionalCharges.filter(c => c.amount > 0).map(charge => (
-                    <div key={charge.id} className="flex justify-between text-sm pl-2">
-                      <span className="text-gray-600">{charge.title || "Charge"}</span>
-                      <span className="font-medium text-gray-900">₹{charge.amount.toFixed(2)}</span>
-                    </div>
-                  ))}
+              {totalAdditionalCharges > 0 && (
+                <div className="flex justify-between text-gray-600">
+                  <span>Additional Charges</span>
+                  <span className="font-semibold text-gray-900">₹{totalAdditionalCharges.toFixed(2)}</span>
                 </div>
               )}
 
-              <div className="pt-3 border-t-2 border-gray-300">
-                <div className="flex justify-between">
-                  <span className="text-lg font-semibold text-gray-900">Grand Total</span>
-                  <span className="text-lg font-bold text-blue-600">₹{grandTotal.toFixed(2)}</span>
-                </div>
+              <div className="pt-3 border-t-2 border-gray-200 flex justify-between items-center">
+                <span className="text-base font-bold text-gray-900">Grand Total</span>
+                <span className="text-xl font-black text-blue-600">₹{grandTotal.toFixed(2)}</span>
               </div>
             </div>
 
             <button
               onClick={handleGenerateInvoice}
               disabled={!hasValidProducts || !hasCustomerDetails}
-              className={`w-full mt-6 px-4 py-3 rounded-md font-medium transition-colors ${
+              className={`w-full py-3.5 rounded-xl font-bold text-sm shadow-md transition-all ${
                 hasValidProducts && hasCustomerDetails
-                  ? "bg-blue-600 text-white hover:bg-blue-700"
-                  : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                  ? "bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.99]"
+                  : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"
               }`}
             >
-              Generate Invoice
+              Generate & Preview Invoice
             </button>
 
             {(!hasValidProducts || !hasCustomerDetails) && (
-              <p className="mt-3 text-xs text-gray-500 text-center">
-                {!hasCustomerDetails && "Please fill customer details. "}
-                {!hasValidProducts && "Please add at least one product."}
+              <p className="text-xs text-amber-600 bg-amber-50 p-2.5 rounded-lg border border-amber-200 text-center">
+                {!hasCustomerDetails && "Select customer & phone. "}
+                {!hasValidProducts && "Add at least 1 product."}
               </p>
             )}
           </div>
         </div>
-      </div>
-
-      {/* Mobile Sticky Button */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 lg:hidden z-10">
-        <button
-          onClick={handleGenerateInvoice}
-          disabled={!hasValidProducts || !hasCustomerDetails}
-          className={`w-full px-4 py-3 rounded-md font-medium transition-colors ${
-            hasValidProducts && hasCustomerDetails
-              ? "bg-blue-600 text-white hover:bg-blue-700"
-              : "bg-gray-300 text-gray-500 cursor-not-allowed"
-          }`}
-        >
-          Generate Invoice - ₹{grandTotal.toFixed(2)}
-        </button>
       </div>
     </div>
   );

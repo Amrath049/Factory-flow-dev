@@ -18,6 +18,20 @@ export class OrderItemDto {
   @IsNumber()
   @Min(1)
   quantity: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  unitPrice?: number;
+
+  @IsOptional()
+  @IsString()
+  priceType?: string; // 'STANDARD' | 'DISCOUNTED' | 'CUSTOM'
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  totalPrice?: number;
 }
 
 export class CreateOrderDto {
@@ -40,4 +54,40 @@ export class CreateOrderDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  @IsOptional()
+  @IsNumber()
+  subtotal?: number;
+
+  @IsOptional()
+  @IsString()
+  discountType?: string;
+
+  @IsOptional()
+  @IsNumber()
+  discountValue?: number;
+
+  @IsOptional()
+  @IsNumber()
+  discountAmount?: number;
+
+  @IsOptional()
+  @IsString()
+  discountReason?: string;
+
+  @IsOptional()
+  @IsString()
+  additionalCharges?: string;
+
+  @IsOptional()
+  @IsNumber()
+  grandTotal?: number;
+
+  @IsOptional()
+  @IsString()
+  paymentStatus?: string; // 'PENDING' | 'COMPLETED'
+
+  @IsOptional()
+  @IsString()
+  paymentMethod?: string;
 }
