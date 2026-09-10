@@ -98,17 +98,14 @@ export function CreateOrder() {
       ]);
       setCustomers(cRes.data);
       setProducts(pRes.data);
-      if (pRes.data.length > 0 && items.length === 0) {
-        const first = pRes.data[0];
-        const defaultPrice = first.discountedPrice ?? first.price ?? 0;
-        const defaultType = first.discountedPrice !== undefined && first.discountedPrice !== null ? 'DISCOUNTED' : 'STANDARD';
+      if (items.length === 0) {
         setItems([
           {
-            productId: first.id,
+            productId: "",
             quantity: 1,
-            priceType: defaultType,
-            unitPrice: defaultPrice,
-            customPriceInput: String(defaultPrice),
+            priceType: 'STANDARD',
+            unitPrice: 0,
+            customPriceInput: "",
           },
         ]);
       }
@@ -188,19 +185,15 @@ export function CreateOrder() {
 
   // Add & Remove Items
   const handleAddItem = () => {
-    if (products.length === 0) return;
-    const prod = products[0];
-    const defaultPrice = prod.discountedPrice ?? prod.price ?? 0;
-    const defaultType = prod.discountedPrice !== undefined && prod.discountedPrice !== null ? 'DISCOUNTED' : 'STANDARD';
     setItems([
-      ...items,
       {
-        productId: prod.id,
-        quantity: 100,
-        priceType: defaultType,
-        unitPrice: defaultPrice,
-        customPriceInput: String(defaultPrice),
+        productId: "",
+        quantity: 1,
+        priceType: 'STANDARD',
+        unitPrice: 0,
+        customPriceInput: "",
       },
+      ...items,
     ]);
   };
 
@@ -369,6 +362,16 @@ export function CreateOrder() {
     }
     if (items.length === 0) {
       toast.error("Please add at least one product item.");
+      return;
+    }
+    const unselected = items.some((i) => !i.productId);
+    if (unselected) {
+      toast.error("Please select a product for all items in the order.");
+      return;
+    }
+    const invalidQty = items.some((i) => !i.quantity || i.quantity <= 0);
+    if (invalidQty) {
+      toast.error("Please ensure all items have a valid quantity greater than 0.");
       return;
     }
 
@@ -597,22 +600,26 @@ export function CreateOrder() {
 
                         {/* Stock pill & Actions */}
                         <div className="flex items-center gap-2 pt-2 sm:pt-6">
-                          <div className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                            <span>{availableStock} in stock</span>
-                          </div>
+                          {product && (
+                            <>
+                              <div className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                <span>{availableStock} in stock</span>
+                              </div>
 
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setStockModalProduct(product || null);
-                              setNewStockInput(String(availableStock));
-                            }}
-                            className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                            title="Update stock level"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setStockModalProduct(product || null);
+                                  setNewStockInput(String(availableStock));
+                                }}
+                                className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                title="Update stock level"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                            </>
+                          )}
 
                           <button
                             type="button"
